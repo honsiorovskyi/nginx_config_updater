@@ -1,4 +1,5 @@
 {{ range . }}
+# SERVER: {{ .Id }}
 server {
     listen   80 default_server;
 
@@ -36,8 +37,7 @@ server {
     {{ end }}
 }
 
-{{ if .SSLCertificate }}
-server {
+{{ if .SSLCertificate }}server {
     listen   443 default_server;
 
     ssl on;
@@ -76,7 +76,6 @@ server {
         rewrite {{ .Rule }};
     }
     {{ end }}
-}
-
-{{ end }}
+} {{ end }}
+# END OF SERVER: {{ .Id }}
 {{ end }}

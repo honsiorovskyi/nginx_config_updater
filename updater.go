@@ -4,100 +4,94 @@ import (
 	"encoding/json"
 	"flag"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"text/template"
 )
 
 type Application struct {
-	Configs      []ServerConfig
+	Configs      map[string]ServerConfig
 	TemplateName string
 	Template     *template.Template
 	OutputFile   string
 }
 
-type UWSGILocation struct {
-	Path      string `json:"path"`
-	UWSGIAddr string `json:"uwsgi_addr"`
-	UWSGIPort string `json:"uwsgi_port"`
+func (app *Application) Setup() {
+	var err error
+
+	app.Template, err = template.ParseFiles(app.TemplateName)
+	fail_on_err(err)
+
+	app.Configs = make(map[string]ServerConfig)
 }
 
-type ProxyLocation struct {
-	Path     string `json:"path"`
-	ProxyURL string `json:"proxy_url"`
-}
-
-type Alias struct {
-	Path      string `json:"path"`
-	LocalPath string `json:"local_path"`
-}
-
-type Rewrite struct {
-	Path string `json:"path"`
-	Rule string `json:"rule"`
-}
-
-type ServerConfig struct {
-	ServerName        string `json:"server_name"`
-	SSLCertificate    string `json:"ssl_certificate"`
-	SSLCertificateKey string `json:"ssl_certificate_key"`
-
-	UWSGILocations []UWSGILocation `json:"uwsgi_locations"`
-	ProxyLocations []ProxyLocation `json:"proxy_locations"`
-	Aliases        []Alias         `json:"aliases"`
-	Rewrites       []Rewrite       `json:"rewrites"`
-}
-
-func warn_err(err error) {
-	if err != nil {
-		log.Println(err)
-	}
-}
-
-func fail_err(err error) {
-	if err != nil {
-		panic(err)
-	}
-}
-
-func (app *Application) reconfigureNginx() {
+func (app *Application) reconfigureNginx() error {
 	f, err := os.Create(app.OutputFile)
-	fail_err(err)
+	if err != nil {
+		return err
+	}
 	defer f.Close()
 
 	app.Template.Execute(f, app.Configs)
+	return nil
 }
 
-func (app *Application) updateConfig(w http.ResponseWriter, r *http.Request) {
+func (app *Application) DeleteConfig(w http.ResponseWriter, r *http.Request) {
+	serverId := r.FormValue("id")
+
+	if serverId == "" {
+		http_err(w, "Server identifier is not specified", nil)
+		return
+	}
+
+	delete(app.Configs, serverId)
+	if err := app.reconfigureNginx(); err != nil {
+		http_err(w, "Could not reconfigure nginx", err)
+		return
+	}
+}
+
+func (app *Application) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	var err error
 	var body []byte
 	var config ServerConfig
 
 	defer r.Body.Close()
 	body, err = ioutil.ReadAll(r.Body)
-	warn_err(err)
+	if err != nil {
+		http_err(w, "Request I/O error", err)
+		return
+	}
 
 	err = json.Unmarshal(body, &config)
-	warn_err(err)
+	if err != nil {
+		http_err(w, "Data parsing error", err)
+		return
+	}
 
-	app.Configs = append(app.Configs, config)
+	if config.Id == "" {
+		http_err(w, "Server identifier is not specified", err)
+		return
+	}
 
-	go app.reconfigureNginx()
+	app.Configs[config.Id] = config
+	if err := app.reconfigureNginx(); err != nil {
+		http_err(w, "Could not reconfigure nginx", err)
+		return
+	}
 }
 
 func main() {
-	var err error
-
 	app := Application{}
 
 	flag.StringVar(&app.TemplateName, "template", "default.conf.tmpl", "Config file template to be rendered. Default: default.conf.tmpl")
 	flag.StringVar(&app.OutputFile, "out", "/etc/nginx/conf.d/default.conf", "Path to the config file to be updated. Default: /etc/nginx/conf.d/default.conf")
 	flag.Parse()
 
-	app.Template, err = template.ParseFiles(app.TemplateName)
-	fail_err(err)
+	app.Setup()
 
-	http.HandleFunc("/updateConfig", app.updateConfig)
-	log.Fatal(http.ListenAndServe(":3456", nil))
+	http.HandleFunc("/updateConfig", app.UpdateConfig)
+	http.HandleFunc("/deleteConfig", app.DeleteConfig)
+
+	fail_on_err(http.ListenAndServe(":3456", nil))
 }
