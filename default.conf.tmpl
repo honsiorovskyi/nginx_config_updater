@@ -1,0 +1,82 @@
+{{ range . }}
+server {
+    listen   80 default_server;
+
+    client_max_body_size 16M;
+    server_name {{ .ServerName }} _;
+
+    # uwsgi location
+    {{ range .UWSGILocations }}
+    location {{ .Path }} {
+        include uwsgi_params;
+        uwsgi_pass {{ .UWSGIAddr }}:{{ .UWSGIPort }};
+        uwsgi_read_timeout 120;
+    }
+    {{ end }}
+
+    # http proxy location 
+    {{ range .ProxyLocations }}
+    location {{ .Path }} {
+        proxy_pass {{ .ProxyURL }};
+    }
+    {{ end }}
+    
+    # aliases
+    {{ range .Aliases }}
+    location {{ .Path }} {
+        alias {{ .LocalPath }};
+    }
+    {{ end }}
+
+    # rewrites
+    {{ range .Rewrites }}
+    location {{ .Path }} {
+        rewrite {{ .Rule }};
+    }
+    {{ end }}
+}
+
+{{ if .SSLCertificate }}
+server {
+    listen   443 default_server;
+
+    ssl on;
+    ssl_certificate {{ .SSLCertificate }};
+    ssl_certificate_key {{ .SSLCertificateKey }};
+
+    client_max_body_size 16M;
+    server_name {{ .ServerName }} _;
+
+    # uwsgi location
+    {{ range .UWSGILocations }}
+    location {{ .Path }} {
+        include uwsgi_params;
+        uwsgi_pass {{ .UWSGIAddr }}:{{ .UWSGIPort }};
+        uwsgi_read_timeout 120;
+    }
+    {{ end }}
+
+    # http proxy location 
+    {{ range .ProxyLocations }}
+    location {{ .Path }} {
+        proxy_pass {{ .ProxyURL }};
+    }
+    {{ end }}
+    
+    # aliases
+    {{ range .Aliases }}
+    location {{ .Path }} {
+        alias {{ .LocalPath }};
+    }
+    {{ end }}
+
+    # rewrites
+    {{ range .Rewrites }}
+    location {{ .Path }} {
+        rewrite {{ .Rule }};
+    }
+    {{ end }}
+}
+
+{{ end }}
+{{ end }}
