@@ -27,8 +27,9 @@ type ServerConfig struct {
 	SSLCertificate    string `json:"ssl_certificate"`
 	SSLCertificateKey string `json:"ssl_certificate_key"`
 
-	UWSGILocations []UWSGILocation `json:"uwsgi_locations"`
-	ProxyLocations []ProxyLocation `json:"proxy_locations"`
-	Aliases        []Alias         `json:"aliases"`
-	Rewrites       []Rewrite       `json:"rewrites"`
+	UWSGILocations []UWSGILocation     `json:"uwsgi_locations"`
+	ProxyLocations []ProxyLocation     `json:"proxy_locations"`
+	Aliases        []Alias             `json:"aliases"`
+	Rewrites       []Rewrite           `json:"rewrites"`
+	Upstreams      map[string][]string `json:"upstreams"`
 }

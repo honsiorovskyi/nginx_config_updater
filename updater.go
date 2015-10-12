@@ -3,14 +3,14 @@ package main
 import (
 	"encoding/json"
 	"flag"
-	"io/ioutil"
+	"fmt"
 	"net/http"
 	"os"
 	"text/template"
 )
 
 type Application struct {
-	Configs      map[string]ServerConfig
+	Configs      map[string]*ServerConfig
 	TemplateName string
 	Template     *template.Template
 	OutputFile   string
@@ -22,7 +22,7 @@ func (app *Application) Setup() {
 	app.Template, err = template.ParseFiles(app.TemplateName)
 	fail_on_err(err)
 
-	app.Configs = make(map[string]ServerConfig)
+	app.Configs = make(map[string]*ServerConfig)
 }
 
 func (app *Application) reconfigureNginx() error {
@@ -44,7 +44,10 @@ func (app *Application) DeleteConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// delete config from map
 	delete(app.Configs, serverId)
+
+	// reconfigure nginx
 	if err := app.reconfigureNginx(); err != nil {
 		http_err(w, "Could not reconfigure nginx", err)
 		return
@@ -52,33 +55,145 @@ func (app *Application) DeleteConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *Application) UpdateConfig(w http.ResponseWriter, r *http.Request) {
-	var err error
-	var body []byte
 	var config ServerConfig
 
 	defer r.Body.Close()
-	body, err = ioutil.ReadAll(r.Body)
-	if err != nil {
-		http_err(w, "Request I/O error", err)
-		return
-	}
-
-	err = json.Unmarshal(body, &config)
+	err := json.NewDecoder(r.Body).Decode(&config)
 	if err != nil {
 		http_err(w, "Data parsing error", err)
 		return
 	}
 
+	// validate config id
 	if config.Id == "" {
 		http_err(w, "Server identifier is not specified", err)
 		return
 	}
 
-	app.Configs[config.Id] = config
+	// add/update config to map
+	app.Configs[config.Id] = &config
+
+	// reconfigure nginx
 	if err := app.reconfigureNginx(); err != nil {
 		http_err(w, "Could not reconfigure nginx", err)
 		return
 	}
+}
+
+func (app *Application) AddUpstream(w http.ResponseWriter, r *http.Request) {
+	var data struct {
+		ConfigId    string `json:"id"`
+		UpstreamId  string `json:"upstream_id"`
+		UpstreamURL string `json:"upstream_url"`
+	}
+
+	// get input data
+	defer r.Body.Close()
+	err := json.NewDecoder(r.Body).Decode(&data)
+	if err != nil {
+		http_err(w, "Data parsing error", err)
+		return
+	}
+
+	// validate input
+	if data.ConfigId == "" {
+		http_err(w, "Server identifier is not specified", err)
+		return
+	}
+
+	if data.UpstreamId == "" {
+		http_err(w, "Upstream identifier is not specified", err)
+		return
+	}
+
+	// update config with the new upstream
+	config, ok := app.Configs[data.ConfigId]
+	if !ok {
+		http_err(w, fmt.Sprintf("Config not found: %q", data.ConfigId), nil)
+		return
+	}
+
+	upstreams, ok := config.Upstreams[data.UpstreamId]
+	if !ok {
+		http_err(w, fmt.Sprintf("Upstream not found: %q", data.UpstreamId), nil)
+		return
+	}
+
+	// add upstream
+	duplicateFound := false
+	for _, s := range upstreams {
+		if s == data.UpstreamURL {
+			duplicateFound = true
+			break
+		}
+	}
+
+	if !duplicateFound {
+		config.Upstreams[data.UpstreamId] = append(upstreams, data.UpstreamURL)
+	}
+
+	// reconfigure nginx
+	if err := app.reconfigureNginx(); err != nil {
+		http_err(w, "Could not reconfigure nginx", err)
+		return
+	}
+}
+
+func (app *Application) DeleteUpstream(w http.ResponseWriter, r *http.Request) {
+	var data struct {
+		ConfigId    string `json:"id"`
+		UpstreamId  string `json:"upstream_id"`
+		UpstreamURL string `json:"upstream_url"`
+	}
+
+	// get input data
+	defer r.Body.Close()
+	err := json.NewDecoder(r.Body).Decode(&data)
+	if err != nil {
+		http_err(w, "Data parsing error", err)
+		return
+	}
+
+	// validate config id
+	if data.ConfigId == "" {
+		http_err(w, "Server identifier is not specified", err)
+		return
+	}
+
+	// update config with the new upstream
+	config, ok := app.Configs[data.ConfigId]
+	if !ok {
+		http_err(w, fmt.Sprintf("Config not found: %q", data.ConfigId), nil)
+		return
+	}
+
+	upstreams, ok := config.Upstreams[data.UpstreamId]
+	if !ok {
+		http_err(w, fmt.Sprintf("Upstream not found: %q", data.UpstreamId), nil)
+		return
+	}
+
+	// check for empty upstream
+	if len(upstreams) <= 0 {
+		http_err(w, fmt.Sprintf("Trying to delete from empty upstream: %q", data.UpstreamId), nil)
+		return
+	}
+
+	// delete upstream
+	newServers := make([]string, len(upstreams)-1)
+	for _, s := range upstreams {
+		if s != data.UpstreamURL {
+			newServers = append(newServers)
+		}
+	}
+	config.Upstreams[data.UpstreamId] = newServers
+
+	// reconfigure nginx
+	if err := app.reconfigureNginx(); err != nil {
+		http_err(w, "Could not reconfigure nginx", err)
+		return
+	}
+
 }
 
 func main() {
@@ -92,6 +207,8 @@ func main() {
 
 	http.HandleFunc("/updateConfig", app.UpdateConfig)
 	http.HandleFunc("/deleteConfig", app.DeleteConfig)
+	http.HandleFunc("/addUpstream", app.AddUpstream)
+	http.HandleFunc("/deleteUpstream", app.DeleteUpstream)
 
 	fail_on_err(http.ListenAndServe(":3456", nil))
 }
