@@ -10,7 +10,10 @@ import (
 )
 
 type Application struct {
-	Configs      map[string]*ServerConfig
+	Config struct {
+		ServerConfigs   map[string]*ServerConfig
+		UpstreamConfigs map[string]*UpstreamConfig
+	}
 	TemplateName string
 	Template     *template.Template
 	OutputFile   string
@@ -22,7 +25,8 @@ func (app *Application) Setup() {
 	app.Template, err = template.ParseFiles(app.TemplateName)
 	fail_on_err(err)
 
-	app.Configs = make(map[string]*ServerConfig)
+	app.Config.ServerConfigs = make(map[string]*ServerConfig)
+	app.Config.UpstreamConfigs = make(map[string]*UpstreamConfig)
 }
 
 func (app *Application) reconfigureNginx() error {
@@ -32,11 +36,11 @@ func (app *Application) reconfigureNginx() error {
 	}
 	defer f.Close()
 
-	app.Template.Execute(f, app.Configs)
+	app.Template.Execute(f, app.Config)
 	return nil
 }
 
-func (app *Application) DeleteConfig(w http.ResponseWriter, r *http.Request) {
+func (app *Application) DeleteServer(w http.ResponseWriter, r *http.Request) {
 	serverId := r.FormValue("id")
 
 	if serverId == "" {
@@ -45,7 +49,7 @@ func (app *Application) DeleteConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// delete config from map
-	delete(app.Configs, serverId)
+	delete(app.Config.ServerConfigs, serverId)
 
 	// reconfigure nginx
 	if err := app.reconfigureNginx(); err != nil {
@@ -54,7 +58,7 @@ func (app *Application) DeleteConfig(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (app *Application) UpdateConfig(w http.ResponseWriter, r *http.Request) {
+func (app *Application) UpdateServer(w http.ResponseWriter, r *http.Request) {
 	var config ServerConfig
 
 	defer r.Body.Close()
@@ -71,7 +75,7 @@ func (app *Application) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// add/update config to map
-	app.Configs[config.Id] = &config
+	app.Config.ServerConfigs[config.Id] = &config
 
 	// reconfigure nginx
 	if err := app.reconfigureNginx(); err != nil {
@@ -80,11 +84,54 @@ func (app *Application) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (app *Application) AddUpstream(w http.ResponseWriter, r *http.Request) {
+func (app *Application) DeleteUpstream(w http.ResponseWriter, r *http.Request) {
+	upstreamId := r.FormValue("id")
+
+	if upstreamId == "" {
+		http_err(w, "Upstream identifier is not specified", nil)
+		return
+	}
+
+	// delete upstream from map
+	delete(app.Config.UpstreamConfigs, upstreamId)
+
+	// reconfigure nginx
+	if err := app.reconfigureNginx(); err != nil {
+		http_err(w, "Could not reconfigure nginx", err)
+		return
+	}
+}
+
+func (app *Application) UpdateUpstream(w http.ResponseWriter, r *http.Request) {
+	var upstream UpstreamConfig
+
+	// get input
+	defer r.Body.Close()
+	err := json.NewDecoder(r.Body).Decode(&upstream)
+	if err != nil {
+		http_err(w, "Data parsing error", err)
+		return
+	}
+
+	// validate input
+	if upstream.Id == "" {
+		http_err(w, "Upstream identifier is not specified", err)
+		return
+	}
+
+	// update config
+	app.Config.UpstreamConfigs[upstream.Id] = &upstream
+
+	// reconfigureNginx
+	if err := app.reconfigureNginx(); err != nil {
+		http_err(w, "Could not reconfigure nginx", err)
+	}
+}
+
+func (app *Application) AddUpstreamServer(w http.ResponseWriter, r *http.Request) {
 	var data struct {
-		ConfigId    string `json:"id"`
-		UpstreamId  string `json:"upstream_id"`
-		UpstreamURL string `json:"upstream_url"`
+		UpstreamId string `json:"upstream_id"`
+		ServerURL  string `json:"server_url"`
 	}
 
 	// get input data
@@ -96,24 +143,13 @@ func (app *Application) AddUpstream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// validate input
-	if data.ConfigId == "" {
-		http_err(w, "Server identifier is not specified", err)
-		return
-	}
-
 	if data.UpstreamId == "" {
 		http_err(w, "Upstream identifier is not specified", err)
 		return
 	}
 
 	// update config with the new upstream
-	config, ok := app.Configs[data.ConfigId]
-	if !ok {
-		http_err(w, fmt.Sprintf("Config not found: %q", data.ConfigId), nil)
-		return
-	}
-
-	upstreams, ok := config.Upstreams[data.UpstreamId]
+	upstream, ok := app.Config.UpstreamConfigs[data.UpstreamId]
 	if !ok {
 		http_err(w, fmt.Sprintf("Upstream not found: %q", data.UpstreamId), nil)
 		return
@@ -121,15 +157,15 @@ func (app *Application) AddUpstream(w http.ResponseWriter, r *http.Request) {
 
 	// add upstream
 	duplicateFound := false
-	for _, s := range upstreams {
-		if s == data.UpstreamURL {
+	for _, s := range upstream.Servers {
+		if s == data.ServerURL {
 			duplicateFound = true
 			break
 		}
 	}
 
 	if !duplicateFound {
-		config.Upstreams[data.UpstreamId] = append(upstreams, data.UpstreamURL)
+		upstream.Servers = append(upstream.Servers, data.ServerURL)
 	}
 
 	// reconfigure nginx
@@ -139,11 +175,10 @@ func (app *Application) AddUpstream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (app *Application) DeleteUpstream(w http.ResponseWriter, r *http.Request) {
+func (app *Application) DeleteUpstreamServer(w http.ResponseWriter, r *http.Request) {
 	var data struct {
-		ConfigId    string `json:"id"`
-		UpstreamId  string `json:"upstream_id"`
-		UpstreamURL string `json:"upstream_url"`
+		UpstreamId string `json:"upstream_id"`
+		ServerURL  string `json:"server_url"`
 	}
 
 	// get input data
@@ -155,38 +190,32 @@ func (app *Application) DeleteUpstream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// validate config id
-	if data.ConfigId == "" {
-		http_err(w, "Server identifier is not specified", err)
+	if data.UpstreamId == "" {
+		http_err(w, "Upstream identifier is not specified", err)
 		return
 	}
 
-	// update config with the new upstream
-	config, ok := app.Configs[data.ConfigId]
-	if !ok {
-		http_err(w, fmt.Sprintf("Config not found: %q", data.ConfigId), nil)
-		return
-	}
-
-	upstreams, ok := config.Upstreams[data.UpstreamId]
+	// get upstream
+	upstream, ok := app.Config.UpstreamConfigs[data.UpstreamId]
 	if !ok {
 		http_err(w, fmt.Sprintf("Upstream not found: %q", data.UpstreamId), nil)
 		return
 	}
 
 	// check for empty upstream
-	if len(upstreams) <= 0 {
+	if len(upstream.Servers) <= 0 {
 		http_err(w, fmt.Sprintf("Trying to delete from empty upstream: %q", data.UpstreamId), nil)
 		return
 	}
 
 	// delete upstream
-	newServers := make([]string, len(upstreams)-1)
-	for _, s := range upstreams {
-		if s != data.UpstreamURL {
+	newServers := make([]string, len(upstream.Servers)-1)
+	for _, s := range upstream.Servers {
+		if s != data.ServerURL {
 			newServers = append(newServers)
 		}
 	}
-	config.Upstreams[data.UpstreamId] = newServers
+	upstream.Servers = newServers
 
 	// reconfigure nginx
 	if err := app.reconfigureNginx(); err != nil {
@@ -205,10 +234,15 @@ func main() {
 
 	app.Setup()
 
-	http.HandleFunc("/updateConfig", app.UpdateConfig)
-	http.HandleFunc("/deleteConfig", app.DeleteConfig)
-	http.HandleFunc("/addUpstream", app.AddUpstream)
+	// server configs
+	http.HandleFunc("/updateServer", app.UpdateServer)
+	http.HandleFunc("/deleteServer", app.DeleteServer)
+
+	// upstreams
+	http.HandleFunc("/updateUpstream", app.UpdateUpstream)
 	http.HandleFunc("/deleteUpstream", app.DeleteUpstream)
+	http.HandleFunc("/addUpstreamServer", app.AddUpstreamServer)
+	http.HandleFunc("/deleteUpstreamServer", app.DeleteUpstreamServer)
 
 	fail_on_err(http.ListenAndServe(":3456", nil))
 }

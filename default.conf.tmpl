@@ -1,14 +1,14 @@
-{{ range . }}
-# SERVER: {{ .Id }}
-{{ range $u_name, $u_servers := .Upstreams }}
-upstream {{ $u_name }} {
-    {{ range $u_servers }}
+{{ range .UpstreamConfigs }}
+upstream {{ .Id }} {
+    {{ range .Servers }}
     server {{ . }};
     {{ end }}
 }
-{{ end }} 
+{{ end }}
     
 
+{{ range .ServerConfigs }}
+# SERVER: {{ .Id }}
 server {
     listen   80 default_server;
 
