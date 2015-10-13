@@ -7,7 +7,7 @@ deploy:
   provider: releases
   api_key:
     secure: dRBCpgZoCdF9a3go5sAQ79w8yDZfj7BYtAvv7gxjqFl6ubF47ISoCiEe6nu7IE+mKdAd8Gsv8g2NSdKLRw1IY98Qts4VA0Wp8SYaC6nyl3PthqFFmOKK1w3JtMaEE3fyS2cA8ZfWOcvqRkkIwxQhcsRcZ+I+TrUhhmVvCuh7DkCPffgu6OiZ6HPGHeonvyQcOrM0rA30A9Drf7fp+PkZYMFiMbsxbe4wpw5fuZdXiNozecHrLTPdMQ4D3jZHqyDIbwhaa3JwZw2Yt+57A3Sfx/EI+OLoY15qazserT0yw8+0PhiH4cBl38JC8/CfrBw4q21xQWB2CbxLB2zN1ZfUeVZ8Q3ZpMEPywRUoQRJrq3mjSwC+nfWf0EP0esO+X49cFSxeJS2ViA3zQrb6X7R88a8KtgvS/hvPOCsnYZGcxCDiKAIO+Q/C/cJzi5ERMLjjRgSBW4Euj1+MnZxn2n6zVqWTb821i2e3ArkZ62YeB7OseSX4JVjSlVTAC/+Jlz2hB8qSSquVAg3dZYjiNjfjC3w41nEbecwYfcIs7XvvSBYA/kgezP5UFTmjbpKo8P60y03BcQHMYGxiM20iB+GSzz87yf3KelKUsjl290wbDuwpplA7X46LrKhnR0XIOUG/gEWzRreHj6uN2ntwsnmpaPOS2HtZTrV8yVdoKOilFdE=
-  file: nginx_config_updater
+  file: .build/github.com/honsiorovskyi/nginx_config_updater
   on:
     branch: master
     tags: true
