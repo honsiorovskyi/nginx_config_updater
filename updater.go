@@ -9,6 +9,8 @@ import (
 	"text/template"
 )
 
+var Version = "N/D"
+
 type Application struct {
 	Config struct {
 		ServerConfigs   map[string]*ServerConfig
@@ -228,9 +230,17 @@ func (app *Application) DeleteUpstreamServer(w http.ResponseWriter, r *http.Requ
 func main() {
 	app := Application{}
 
+	var doShowVersion bool
+
+	flag.BoolVar(&doShowVersion, "version", false, "Show application version and exit")
 	flag.StringVar(&app.TemplateName, "template", "default.conf.tmpl", "Config file template to be rendered. Default: default.conf.tmpl")
 	flag.StringVar(&app.OutputFile, "out", "/etc/nginx/conf.d/default.conf", "Path to the config file to be updated. Default: /etc/nginx/conf.d/default.conf")
 	flag.Parse()
+
+	if doShowVersion {
+		fmt.Println(Version)
+		return
+	}
 
 	app.Setup()
 
