@@ -8,14 +8,14 @@ SOURCES = \
 		  updater.go
 
 VERSION=$(or $(TRAVIS_TAG), $(shell git describe --tags $(shell git rev-list --tags --max-count=1)))
-BUILD_NUMBER=$(or $(TRAVIS_BUILD_NUMBER), 1)
-COMMIT=$(or $(TRAVIS_COMMIT), $(shell git rev-parse --short HEAD))
-GO_VERSION:=$(or $(TRAVIS_GO_VERSION), $(shell go version | awk '{ print $$3"-"$$4 }'))
+BUILD_NUMBER=$(or $(TRAVIS_BUILD_NUMBER), 0)
+COMMIT=$(shell git rev-parse --short HEAD)
+GO_VERSION:=$(shell go version | awk '{ print $$3"-"$$4 }')
 
 .PHONY : clean
 
 $(BIN_PATH) : $(SOURCES)
-	go build -ldflags "-X main.Version=$(VERSION).$(BUILD_NUMBER)-$(COMMIT)-$(GO_VERSION)" -o $(BIN_PATH) .
+	go build -ldflags "-X main.Version=$(VERSION)-build$(BUILD_NUMBER)-$(COMMIT)-$(GO_VERSION)" -o $(BIN_PATH) .
 
 clean :
 	rm -rf $(BUILD_DIR)
