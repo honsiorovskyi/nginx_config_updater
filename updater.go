@@ -211,10 +211,11 @@ func (app *Application) DeleteUpstreamServer(w http.ResponseWriter, r *http.Requ
 	}
 
 	// delete upstream
-	newServers := make([]string, len(upstream.Servers)-1)
+	// we assume that new array will contain (n-1) elements; so capacity=n-1
+	newServers := make([]string, 0, len(upstream.Servers)-1)
 	for _, s := range upstream.Servers {
 		if s != data.ServerURL {
-			newServers = append(newServers)
+			newServers = append(newServers, s)
 		}
 	}
 	upstream.Servers = newServers
@@ -224,7 +225,6 @@ func (app *Application) DeleteUpstreamServer(w http.ResponseWriter, r *http.Requ
 		http_err(w, "Could not reconfigure nginx", err)
 		return
 	}
-
 }
 
 func main() {
