@@ -15,7 +15,7 @@ GO_VERSION:=$(shell go version | awk '{ print $$3"-"$$4 }')
 .PHONY : clean
 
 $(BIN_PATH) : $(SOURCES)
-	go build -ldflags "-X main.Version=$(VERSION)-build$(BUILD_NUMBER)-$(COMMIT)-$(GO_VERSION)" -o $(BIN_PATH) .
+	CGO_ENABLED=0 GOOS=linux go build -a -tags netgo -ldflags "-w -X main.Version=$(VERSION)-build$(BUILD_NUMBER)-$(COMMIT)-$(GO_VERSION)" -o $(BIN_PATH) .
 
 clean :
 	rm -rf $(BUILD_DIR)
