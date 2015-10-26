@@ -3,7 +3,6 @@ REPO_NAME = github.com/honsiorovskyi/nginx_config_updater
 BIN_PATH = $(BUILD_DIR)/$(REPO_NAME)
 SOURCES = \
 		  config.go \
-		  err.go \
 		  http.go \
 		  updater.go
 
