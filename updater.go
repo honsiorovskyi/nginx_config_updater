@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -22,14 +23,18 @@ type Application struct {
 	OutputFile   string
 }
 
-func (app *Application) Setup() {
+func (app *Application) Setup() error {
 	var err error
 
 	app.Template, err = template.ParseFiles(app.TemplateName)
-	fail_on_err(err)
+	if err != nil {
+		return err
+	}
 
 	app.Config.ServerConfigs = make(map[string]*ServerConfig)
 	app.Config.UpstreamConfigs = make(map[string]*UpstreamConfig)
+
+	return nil
 }
 
 func (app *Application) reconfigureNginx() error {
@@ -232,13 +237,17 @@ func (app *Application) DeleteUpstreamServer(w http.ResponseWriter, r *http.Requ
 }
 
 func main() {
+	var err error
+
 	app := Application{}
 
 	var doShowVersion bool
+	var listenTo string
 
 	flag.BoolVar(&doShowVersion, "version", false, "Show application version and exit")
 	flag.StringVar(&app.TemplateName, "template", "default.conf.tmpl", "Config file template to be rendered. Default: default.conf.tmpl")
 	flag.StringVar(&app.OutputFile, "out", "/etc/nginx/conf.d/default.conf", "Path to the config file to be updated. Default: /etc/nginx/conf.d/default.conf")
+	flag.StringVar(&listenTo, "listen", ":3456", "Host and port to listen to. Default: :3456")
 	flag.Parse()
 
 	if doShowVersion {
@@ -246,7 +255,10 @@ func main() {
 		return
 	}
 
-	app.Setup()
+	err = app.Setup()
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// server configs
 	http.HandleFunc("/updateServer", app.UpdateServer)
@@ -258,5 +270,8 @@ func main() {
 	http.HandleFunc("/addUpstreamServer", app.AddUpstreamServer)
 	http.HandleFunc("/deleteUpstreamServer", app.DeleteUpstreamServer)
 
-	fail_on_err(http.ListenAndServe(":3456", nil))
+	err = http.ListenAndServe(listenTo, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
