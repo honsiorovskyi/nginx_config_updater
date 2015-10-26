@@ -8,8 +8,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"os/signal"
-	"syscall"
 	"text/template"
 )
 
@@ -49,7 +47,7 @@ func (app *Application) Setup() error {
 	return nil
 }
 
-func (app *Application) Shutdown() error {
+func (app *Application) reconfigureNginx() error {
 	// try to save config to file
 	if app.ConfigFile != "" && !app.NoSaveConfig {
 		log.Printf("Trying to save config to %q", app.ConfigFile)
@@ -59,10 +57,6 @@ func (app *Application) Shutdown() error {
 		}
 	}
 
-	return nil
-}
-
-func (app *Application) reconfigureNginx() error {
 	// render template
 	f, err := os.Create(app.OutputFile)
 	if err != nil {
@@ -292,20 +286,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	// remove upstream on exit
-	signalChan := make(chan os.Signal)
-	signal.Notify(signalChan, syscall.SIGINT)
-	signal.Notify(signalChan, syscall.SIGTERM)
-	go func() {
-		<-signalChan
-		log.Println("\nReceived an interrupt, shutting down...\n")
-		err := app.Shutdown()
-		if err != nil {
-			log.Fatal(err)
-		}
-		os.Exit(0)
-	}()
 
 	// server configs
 	http.HandleFunc("/updateServer", app.UpdateServer)
