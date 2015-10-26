@@ -8,19 +8,21 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
+	"syscall"
 	"text/template"
 )
 
 var Version = "N/D"
 
 type Application struct {
-	Config struct {
-		ServerConfigs   map[string]*ServerConfig
-		UpstreamConfigs map[string]*UpstreamConfig
-	}
+	ConfigFile   string
+	Config       *NginxConfig
+	NoSaveConfig bool
 	TemplateName string
 	Template     *template.Template
 	OutputFile   string
+	NoReload     bool
 }
 
 func (app *Application) Setup() error {
@@ -31,8 +33,31 @@ func (app *Application) Setup() error {
 		return err
 	}
 
-	app.Config.ServerConfigs = make(map[string]*ServerConfig)
-	app.Config.UpstreamConfigs = make(map[string]*UpstreamConfig)
+	app.Config = NewNginxConfig()
+
+	// try to load config from file
+	if app.ConfigFile != "" {
+		log.Printf("Trying to load config from %q", app.ConfigFile)
+		if err := app.Config.Load(app.ConfigFile); err != nil {
+			log.Printf("Couldn't load config from file. Using an empty config.")
+			log.Print(err)
+			// force reset config because we don't know what JSONDecoder has done to the original one
+			app.Config = NewNginxConfig()
+		}
+	}
+
+	return nil
+}
+
+func (app *Application) Shutdown() error {
+	// try to save config to file
+	if app.ConfigFile != "" && !app.NoSaveConfig {
+		log.Printf("Trying to save config to %q", app.ConfigFile)
+		if err := app.Config.Save(app.ConfigFile); err != nil {
+			log.Printf("Couldn't save config to file. Skipping.")
+			log.Print(err)
+		}
+	}
 
 	return nil
 }
@@ -48,7 +73,11 @@ func (app *Application) reconfigureNginx() error {
 	app.Template.Execute(f, app.Config)
 
 	// reload nginx
-	return exec.Command("nginx", "-s", "reload").Run()
+	if !app.NoReload {
+		return exec.Command("nginx", "-s", "reload").Run()
+	}
+
+	return nil
 }
 
 func (app *Application) DeleteServer(w http.ResponseWriter, r *http.Request) {
@@ -247,7 +276,10 @@ func main() {
 	flag.BoolVar(&doShowVersion, "version", false, "Show application version and exit")
 	flag.StringVar(&app.TemplateName, "template", "default.conf.tmpl", "Config file template to be rendered. Default: default.conf.tmpl")
 	flag.StringVar(&app.OutputFile, "out", "/etc/nginx/conf.d/default.conf", "Path to the config file to be updated. Default: /etc/nginx/conf.d/default.conf")
+	flag.StringVar(&app.ConfigFile, "config", "", "Path to the config file. Default: empty")
+	flag.BoolVar(&app.NoSaveConfig, "no-save-config", false, "Don't save (overwrite existing) config file. Default: false")
 	flag.StringVar(&listenTo, "listen", ":3456", "Host and port to listen to. Default: :3456")
+	flag.BoolVar(&app.NoReload, "no-reload", false, "Don't reload Nginx when applying changes. Default: false")
 	flag.Parse()
 
 	if doShowVersion {
@@ -255,10 +287,25 @@ func main() {
 		return
 	}
 
+	// initialize app
 	err = app.Setup()
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	// remove upstream on exit
+	signalChan := make(chan os.Signal)
+	signal.Notify(signalChan, syscall.SIGINT)
+	signal.Notify(signalChan, syscall.SIGTERM)
+	go func() {
+		<-signalChan
+		log.Println("\nReceived an interrupt, shutting down...\n")
+		err := app.Shutdown()
+		if err != nil {
+			log.Fatal(err)
+		}
+		os.Exit(0)
+	}()
 
 	// server configs
 	http.HandleFunc("/updateServer", app.UpdateServer)

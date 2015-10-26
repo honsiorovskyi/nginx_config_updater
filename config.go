@@ -1,5 +1,10 @@
 package main
 
+import (
+	"encoding/json"
+	"os"
+)
+
 type UWSGILocation struct {
 	Path      string `json:"path"`
 	UWSGIAddr string `json:"uwsgi_addr"`
@@ -36,4 +41,44 @@ type ServerConfig struct {
 type UpstreamConfig struct {
 	Id      string   `json:"id"`
 	Servers []string `json:"servers"`
+}
+
+type NginxConfig struct {
+	ServerConfigs   map[string]*ServerConfig   `json:"server_configs"`
+	UpstreamConfigs map[string]*UpstreamConfig `json:"upstream_config"`
+}
+
+func NewNginxConfig() *NginxConfig {
+	nc := new(NginxConfig)
+	nc.ServerConfigs = make(map[string]*ServerConfig)
+	nc.UpstreamConfigs = make(map[string]*UpstreamConfig)
+	return nc
+}
+
+func (nc *NginxConfig) Load(filename string) error {
+	file, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	if err := json.NewDecoder(file).Decode(nc); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (nc *NginxConfig) Save(filename string) error {
+	file, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	if err := json.NewEncoder(file).Encode(nc); err != nil {
+		return err
+	}
+
+	return nil
 }
