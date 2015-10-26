@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"text/template"
 )
 
@@ -32,6 +33,7 @@ func (app *Application) Setup() {
 }
 
 func (app *Application) reconfigureNginx() error {
+	// render template
 	f, err := os.Create(app.OutputFile)
 	if err != nil {
 		return err
@@ -39,7 +41,9 @@ func (app *Application) reconfigureNginx() error {
 	defer f.Close()
 
 	app.Template.Execute(f, app.Config)
-	return nil
+
+	// reload nginx
+	return exec.Command("nginx", "-s", "reload").Run()
 }
 
 func (app *Application) DeleteServer(w http.ResponseWriter, r *http.Request) {
