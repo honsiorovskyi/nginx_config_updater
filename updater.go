@@ -44,7 +44,7 @@ func (app *Application) Setup() error {
 		}
 	}
 
-	return nil
+	return app.reconfigureNginx()
 }
 
 func (app *Application) reconfigureNginx() error {
